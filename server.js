@@ -2,6 +2,7 @@ import express from 'express';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import fs from 'fs';
+import path from 'path';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -9,54 +10,77 @@ const __dirname = dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-console.log('=== Server Startup Debug ===');
-console.log('Current working directory:', process.cwd());
-console.log('Server script location:', __dirname);
+console.log('=== Server Startup ===');
+console.log('CWD:', process.cwd());
+console.log('__dirname:', __dirname);
 
-// Check if dist exists and what files are present
-const cwd = process.cwd();
-const distPath = join(cwd, 'dist');
+// Find dist folder - try relative to current working directory first
+let distPath = null;
 
-console.log('Looking for dist at:', distPath);
+// Priority order:
+// 1. dist in current working directory
+// 2. dist in __dirname
+// 3. dist one level up
 
-if (!fs.existsSync(distPath)) {
-  console.error('ERROR: dist folder not found!');
-  console.error('Contents of', cwd, ':');
-  try {
-    const contents = fs.readdirSync(cwd);
-    console.log(contents);
-  } catch (e) {
-    console.error('Could not read directory:', e.message);
+const candidates = [
+  join(process.cwd(), 'dist'),
+  join(__dirname, 'dist'),
+  join(__dirname, '..', 'dist')
+];
+
+for (const candidate of candidates) {
+  console.log(`Checking: ${candidate}`);
+  if (fs.existsSync(candidate)) {
+    const indexExists = fs.existsSync(join(candidate, 'index.html'));
+    console.log(`  ✓ Found (index.html: ${indexExists ? 'yes' : 'no'})`);
+    if (indexExists) {
+      distPath = candidate;
+      break;
+    }
   }
-  console.error('\nMake sure you run: npm run build');
+}
+
+if (!distPath) {
+  console.error('\n✗ ERROR: Could not find dist folder with index.html');
+  console.error('\nChecked paths:');
+  candidates.forEach(p => console.error(`  - ${p}`));
+  console.error('\nCurrent directory contents:');
+  try {
+    console.error(fs.readdirSync(process.cwd()));
+  } catch (e) {
+    console.error('Could not read directory');
+  }
   process.exit(1);
 }
 
-console.log('✓ Found dist folder');
-console.log('Contents of dist:');
-const distContents = fs.readdirSync(distPath);
-console.log(distContents);
+console.log(`\n✓ Using dist at: ${distPath}\n`);
 
 // Serve static files
-app.use(express.static(distPath));
+app.use(express.static(distPath, {
+  maxAge: '1d',
+  etag: false
+}));
 
 // SPA fallback - serve index.html for all non-file routes
 app.get('*', (req, res) => {
-  const indexPath = join(distPath, 'index.html');
-  res.sendFile(indexPath);
+  res.sendFile(join(distPath, 'index.html'), (err) => {
+    if (err) {
+      console.error('Error serving index.html:', err.message);
+      res.status(500).send('Internal Server Error');
+    }
+  });
 });
 
-const server = app.listen(PORT, () => {
-  console.log(`\n✓ Server running on port ${PORT}`);
-  console.log(`✓ Serving static files from: ${distPath}`);
-  console.log(`✓ Ready at http://localhost:${PORT}\n`);
+const server = app.listen(PORT, '0.0.0.0', () => {
+  console.log(`✓ Server listening on port ${PORT}`);
+  console.log(`✓ Ready for requests\n`);
 });
 
 // Handle graceful shutdown
 process.on('SIGTERM', () => {
-  console.log('SIGTERM signal received: closing HTTP server');
+  console.log('\nSIGTERM received, shutting down gracefully...');
   server.close(() => {
-    console.log('HTTP server closed');
+    console.log('Server closed');
     process.exit(0);
   });
 });
