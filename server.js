@@ -2,6 +2,7 @@ import express from 'express';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import fs from 'fs';
+import { execSync } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -9,15 +10,31 @@ const __dirname = dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Debug: show current working directory and directory structure
+console.log('Current working directory:', process.cwd());
+console.log('Server script location:', __dirname);
+
+// List files in current directory
+try {
+  console.log('Files in current directory:');
+  const files = execSync('ls -la', { encoding: 'utf-8' });
+  console.log(files);
+} catch (e) {
+  console.log('Could not list files');
+}
+
 // Try multiple possible dist paths
 let distPath;
 const possiblePaths = [
   join(__dirname, 'dist'),
   join(__dirname, '..', 'dist'),
-  '/opt/render/project/dist'
+  '/opt/render/project/dist',
+  process.cwd() + '/dist',
+  '/dist'
 ];
 
 for (const path of possiblePaths) {
+  console.log(`Checking: ${path} - exists: ${fs.existsSync(path)}`);
   if (fs.existsSync(path)) {
     distPath = path;
     console.log('✓ Found dist at:', distPath);
