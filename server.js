@@ -2,7 +2,6 @@ import express from 'express';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import fs from 'fs';
-import { execSync } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -10,61 +9,56 @@ const __dirname = dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Debug: show current working directory and directory structure
+console.log('=== Server Startup Debug ===');
 console.log('Current working directory:', process.cwd());
 console.log('Server script location:', __dirname);
 
-// List files in current directory
-try {
-  console.log('Files in current directory:');
-  const files = execSync('ls -la', { encoding: 'utf-8' });
-  console.log(files);
-} catch (e) {
-  console.log('Could not list files');
-}
+// Check if dist exists and what files are present
+const cwd = process.cwd();
+const distPath = join(cwd, 'dist');
 
-// Try multiple possible dist paths
-let distPath;
-const possiblePaths = [
-  join(__dirname, 'dist'),
-  join(__dirname, '..', 'dist'),
-  '/opt/render/project/dist',
-  process.cwd() + '/dist',
-  '/dist'
-];
+console.log('Looking for dist at:', distPath);
 
-for (const path of possiblePaths) {
-  console.log(`Checking: ${path} - exists: ${fs.existsSync(path)}`);
-  if (fs.existsSync(path)) {
-    distPath = path;
-    console.log('✓ Found dist at:', distPath);
-    break;
+if (!fs.existsSync(distPath)) {
+  console.error('ERROR: dist folder not found!');
+  console.error('Contents of', cwd, ':');
+  try {
+    const contents = fs.readdirSync(cwd);
+    console.log(contents);
+  } catch (e) {
+    console.error('Could not read directory:', e.message);
   }
-}
-
-if (!distPath) {
-  console.error('✗ Could not find dist folder in any expected location');
-  console.error('Checked paths:', possiblePaths);
+  console.error('\nMake sure you run: npm run build');
   process.exit(1);
 }
 
-// Serve static files from the dist directory
+console.log('✓ Found dist folder');
+console.log('Contents of dist:');
+const distContents = fs.readdirSync(distPath);
+console.log(distContents);
+
+// Serve static files
 app.use(express.static(distPath));
 
-// Handle client-side routing - send index.html for all routes
+// SPA fallback - serve index.html for all non-file routes
 app.get('*', (req, res) => {
   const indexPath = join(distPath, 'index.html');
-  res.sendFile(indexPath, (err) => {
-    if (err) {
-      console.error('Error sending file:', err);
-      res.status(404).send('Not found');
-    }
-  });
+  res.sendFile(indexPath);
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log(`Serving files from: ${distPath}`);
+const server = app.listen(PORT, () => {
+  console.log(`\n✓ Server running on port ${PORT}`);
+  console.log(`✓ Serving static files from: ${distPath}`);
+  console.log(`✓ Ready at http://localhost:${PORT}\n`);
+});
+
+// Handle graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('SIGTERM signal received: closing HTTP server');
+  server.close(() => {
+    console.log('HTTP server closed');
+    process.exit(0);
+  });
 });
 
 app.listen(PORT, () => {
